@@ -1,72 +1,61 @@
 use std::collections::HashMap;
-use std::io::{Error, Read, Write};
-use std::str::FromStr;
+use std::error::Error;
+use std::fs::{File, OpenOptions};
 
-fn main() {
-    let action: String = std::env::args().nth(1).expect("Please specify an action");
-    let item: String = std::env::args().nth(2).expect("Please specify an item");
-
-    let mut todo = Todo::new().expect("Initialization of db failed");
-
-    if action == "add" {
-        todo.insert(item.clone(), true); // Insert an item with a boolean value.
-        match todo.save() {
-            Ok(_) => println!("Todo saved"),
-            Err(why) => println!("An error occurred: {}", why),
-        }
-    } else if action == "complete" {
-        match todo.complete(&item) {
-            None => println!("'{}' is not present in the list", item),
-            Some(_) => match todo.save() {
-                Ok(_) => println!("Todo saved"),
-                Err(why) => println!("An error occurred: {}", why),
-            },
-        }
+fn main() -> Result<(), Box<dyn Error>> {
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() < 3 {
+        println!("Please specify an action and an item");
+        return Ok(());
     }
 
-    println!("{:?}, {:?}", action, item);
+    let action = &args[1];
+    let item = &args[2];
+
+    let mut todo = Todo::new()?;
+
+    match action.as_str() {
+        "add" => {
+            todo.insert(item.to_string(), true);
+            todo.save()?;
+            println!("Item added and todo saved");
+        }
+        "complete" => {
+            if let Some(_) = todo.complete(item) {
+                todo.save()?;
+                println!("Item marked as complete and todo saved");
+            } else {
+                println!("'{}' is not present in the list", item);
+            }
+        }
+        _ => println!("Invalid action: {}", action),
+    }
+
+    Ok(())
 }
 
 struct Todo {
-    // Use Rust's built-in HashMap to store key-value pairs.
     map: HashMap<String, bool>,
 }
 
 impl Todo {
-    fn new() -> Result<Todo, Error> {
-        // open the db file
-        let mut f = std::fs::OpenOptions::new()
+    fn new() -> Result<Todo, Box<dyn Error>> {
+        let f = OpenOptions::new()
             .write(true)
             .create(true)
             .read(true)
-            .open("db.txt")?;
-        // read its content into a new string
-        let mut content = String::new();
-        f.read_to_string(&mut content)?;
+            .open("db.json")?;
 
-        // allocate an empty HashMap
-        let mut map = HashMap::new();
+        let map: HashMap<String, bool> = match serde_json::from_reader(f) {
+            Ok(map) => map,
+            Err(e) if e.is_eof() => HashMap::new(),
+            Err(e) => return Err(e.into()),
+        };
 
-        // loop over each line of the file
-        for entries in content.lines() {
-            // split and bind values
-            let mut values = entries.split('\t');
-            if let Some(key) = values.next() {
-                if let Some(val) = values.next() {
-                    // parse the value as a boolean with error handling
-                    if let Ok(value) = bool::from_str(val) {
-                        // insert them into HashMap
-                        map.insert(String::from(key), value);
-                    }
-                }
-            }
-        }
-
-        // Return Ok
         Ok(Todo { map })
     }
 
-    fn complete(&mut self, key: &String) -> Option<()> {
+    fn complete(&mut self, key: &str) -> Option<()> {
         if let Some(v) = self.map.get_mut(key) {
             *v = false;
             Some(())
@@ -79,14 +68,9 @@ impl Todo {
         self.map.insert(key, value);
     }
 
-    fn save(&self) -> Result<(), Error> {
-        let mut file = std::fs::File::create("db.txt")?;
-
-        for (k, v) in &self.map {
-            let record = format!("{}\t{}\n", k, v);
-            file.write_all(record.as_bytes())?;
-        }
-
+    fn save(&self) -> Result<(), Box<dyn Error>> {
+        let f = File::create("db.json")?;
+        serde_json::to_writer_pretty(f, &self.map)?;
         Ok(())
     }
 }
