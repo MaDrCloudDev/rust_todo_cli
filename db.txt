@@ -1,3 +1,2 @@
-make pancakes	true
-make coffee	true
 code rust	true
+make coffee	false
