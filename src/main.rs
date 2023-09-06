@@ -76,4 +76,4 @@ impl Todo {
 }
 
 // cargo run -- add "code rust"
-// cat db.txt
+// cat db.json
